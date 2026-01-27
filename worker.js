@@ -183,7 +183,7 @@ export default {
             return Response.json({
               type: 4,
               data: {
-                content: "failed to get time",
+                content: "failed to get time\n-# older maps (~2023?) didn't record verification time.",
                 allowed_mentions: { parse: [] }
               }
             });
