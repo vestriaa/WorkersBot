@@ -69,5 +69,41 @@ export const commands = [
     ],
     integration_types: [0, 1],
     contexts: [0, 1, 2]
+  },
+
+  {
+    name: "is_banned",
+    description: "check if someone is banned",
+    options: [
+      {
+        name: "username",
+        description: "user name",
+        type: 3,
+        required: false
+      },
+      {
+        name: "user_id",
+        description: "user id",
+        type: 3,
+        required: false
+      }
+    ],
+    integration_types: [0, 1],
+    contexts: [0, 1, 2]
+  },
+
+  {
+    name: "was_verified",
+    description: "view the verification date on a level",
+    options: [
+      {
+        name: "level_url",
+        description: "level url",
+        type: 3,
+        required: true
+      }
+    ],
+    integration_types: [0, 1],
+    contexts: [0, 1, 2]
   }
 ];
