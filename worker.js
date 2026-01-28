@@ -4,7 +4,6 @@ import { Buffer } from "node:buffer";
 export default {
   async fetch(request, env, ctx) {
 
-    // verify discord request
     const signature = request.headers.get("x-signature-ed25519");
     const timestamp = request.headers.get("x-signature-timestamp");
     const body = await request.text();
@@ -21,12 +20,10 @@ export default {
 
     const json = JSON.parse(body);
 
-    // discord ping
     if (json.type === 1) {
       return Response.json({ type: 1 });
     }
 
-    // slash command handler
     if (json.type == 2) {
       const command_name = json.data.name.toLowerCase();
 
@@ -535,7 +532,8 @@ export default {
             day % 10 === 2 && day !== 12 ? "nd" :
             day % 10 === 3 && day !== 13 ? "rd" : "th";
 
-          const recordedOn = `${month} ${day}${suffix} ${year} | ${hours}:${minutesTime}:${secondsTime}`;
+          const unixSeconds = Math.floor(timestampNumber / 1000);
+          const recordedOn = `${month} ${day}${suffix} ${year} at <t:${unixSeconds}:T>`;
 
           return Response.json({
             type: 4,
@@ -568,9 +566,228 @@ export default {
           });
         }
       }
+
+      if (command_name === "is_banned") {
+
+        const username = json.data.options?.find(o => o.name === "username")?.value;
+        const userIdInput = json.data.options?.find(o => o.name === "user_id")?.value;
+
+        if (!username && !userIdInput) {
+          return Response.json({
+            type: 4,
+            data: {
+              content: "username/user_id needed",
+              allowed_mentions: { parse: [] },
+              flags: 64
+            }
+          });
+        }
+
+        let userId = null;
+        let displayName = null;
+
+        if (userIdInput) {
+          userId = String(userIdInput).trim();
+        }
+
+        if (!userId) {
+          const searchUrl = `https://api.slin.dev/grab/v1/list?max_format_version=19&type=user_name&search_term=${encodeURIComponent(String(username))}`;
+          try {
+            const searchResp = await fetch(searchUrl);
+            if (!searchResp.ok) {
+              throw new Error("search fail");
+            }
+            const searchData = await searchResp.json();
+            const first = Array.isArray(searchData) && searchData.length > 0 ? searchData[0] : null;
+            if (!first || !first.user_id) {
+              return Response.json({
+                type: 4,
+                data: {
+                  content: "couldn't find user",
+                  allowed_mentions: { parse: [] },
+                  flags: 64
+                }
+              });
+            }
+            userId = first.user_id;
+            displayName = first.user_name || String(username);
+          } catch (err) {
+            return Response.json({
+              type: 4,
+              data: {
+                content: "failed to search",
+                allowed_mentions: { parse: [] },
+                flags: 64
+              }
+            });
+          }
+        }
+
+        const infoUrl = `https://api.slin.dev/grab/v1/get_user_info?user_id=${encodeURIComponent(userId)}`;
+        try {
+          const infoResp = await fetch(infoUrl);
+          if (!infoResp.ok) {
+            throw new Error("info fail");
+          }
+          const info = await infoResp.json();
+          if (!displayName) {
+            displayName = info.user_name || (username ? String(username) : String(userId));
+          }
+
+          const isBanned = info && info.moderation_info && info.moderation_info.type === "ban";
+
+          const profileUrl = `https://grabvr.quest/levels?tab=tab_other_user&user_id=${encodeURIComponent(userId)}`;
+
+          const description = isBanned
+            ? `**BANNED**`
+            : `**not banned**\n-# only bans are public information, warnings aren't avalible to view`;
+
+          const embed = {
+            title: displayName,
+            url: profileUrl,
+            description: description,
+            color: isBanned ? 0xed4245 : 0x57f287
+          };
+
+          return Response.json({
+            type: 4,
+            data: {
+              content: "",
+              embeds: [embed],
+              allowed_mentions: { parse: [] }
+            }
+          });
+        } catch (err) {
+          return Response.json({
+            type: 4,
+            data: {
+              content: "couldn't get user info",
+              allowed_mentions: { parse: [] },
+              flags: 64
+            }
+          });
+        }
+      }
+
+      if (command_name === "was_verified") {
+
+        const url = json.data.options?.find(o => o.name === "level_url")?.value;
+
+        if (!url) {
+          return Response.json({
+            type: 4,
+            data: {
+              content: "level url required",
+              allowed_mentions: { parse: [] }
+            }
+          });
+        }
+
+        const match = url.match(/level=([^:]+):(\d+)/);
+        if (!match) {
+          return Response.json({
+            type: 4,
+            data: {
+              content: "invalid level",
+              allowed_mentions: { parse: [] }
+            }
+          });
+        }
+
+        const levelId = match[1];
+        const levelTimestamp = match[2];
+        const detailsUrl = `https://api.slin.dev/grab/v1/details/${levelId}/${levelTimestamp}`;
+
+        try {
+          const detResp = await fetch(detailsUrl);
+          if (!detResp.ok) {
+            throw new Error("details fail");
+          }
+          const detData = await detResp.json();
+          const title = detData.title || "untitled level";
+
+          const tags = Array.isArray(detData.tags) ? detData.tags : [];
+          const hasOkTag = tags.includes("ok");
+
+          const okTsNum = Number(detData.moderator_tag_ok_timestamp);
+          const hasOkTimestamp = Number.isFinite(okTsNum) && okTsNum > 0;
+
+          let tsMs = null;
+          let unixSeconds = null;
+          if (hasOkTimestamp) {
+            if (okTsNum > 1e12) {
+              tsMs = okTsNum;
+              unixSeconds = Math.floor(okTsNum / 1000);
+            } else {
+              unixSeconds = Math.floor(okTsNum);
+              tsMs = unixSeconds * 1000;
+            }
+          }
+
+          let description;
+          if (hasOkTimestamp && hasOkTag) {
+            const date = new Date(tsMs);
+            const day = date.getUTCDate();
+            const year = date.getUTCFullYear();
+            const monthNames = [
+              "January","February","March","April","May","June",
+              "July","August","September","October","November","December"
+            ];
+            const month = monthNames[date.getUTCMonth()];
+            const suffix =
+              day % 10 === 1 && day !== 11 ? "st" :
+              day % 10 === 2 && day !== 12 ? "nd" :
+              day % 10 === 3 && day !== 13 ? "rd" : "th";
+            const formatted = `${month} ${day}${suffix} ${year} at <t:${unixSeconds}:T>`;
+            description = `**Verified on:** ${formatted}`;
+          } else if (hasOkTimestamp && !hasOkTag) {
+            const date = new Date(tsMs);
+            const day = date.getUTCDate();
+            const year = date.getUTCFullYear();
+            const monthNames = [
+              "January","February","March","April","May","June",
+              "July","August","September","October","November","December"
+            ];
+            const month = monthNames[date.getUTCMonth()];
+            const suffix =
+              day % 10 === 1 && day !== 11 ? "st" :
+              day % 10 === 2 && day !== 12 ? "nd" :
+              day % 10 === 3 && day !== 13 ? "rd" : "th";
+            const formatted = `${month} ${day}${suffix} ${year} at <t:${unixSeconds}:T>`;
+            description = `**Was Verified:** ${formatted}`;
+          } else {
+            description = `**Never Verified**`;
+          }
+
+          const embed = {
+            title: title,
+            url: url,
+            description: description,
+            color: hasOkTimestamp ? (hasOkTag ? 0x57f287 : 0xF39C12) : 0xed4245
+          };
+
+          return Response.json({
+            type: 4,
+            data: {
+              content: "",
+              embeds: [embed],
+              allowed_mentions: { parse: [] }
+            }
+          });
+        } catch (err) {
+          return Response.json({
+            type: 4,
+            data: {
+              content: "couldn't get level information",
+              allowed_mentions: { parse: [] }
+            }
+          });
+        }
+      }
     }
 
     return new Response("incorrect request", { status: 400 });
   }
 };
 // cooked
+
