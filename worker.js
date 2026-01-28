@@ -640,7 +640,7 @@ export default {
 
           const description = isBanned
             ? `**BANNED**`
-            : `**not banned**\n-# only bans are public information, warnings aren't avalible to view`;
+            : `**not banned**\n-# only bans are public information the duration, reason and warnings aren't avalible.`;
 
           const embed = {
             title: displayName,
