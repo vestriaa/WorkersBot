@@ -342,7 +342,9 @@ export default {
               throw new Error("couldn't search user");
             }
             const searchData = await searchResp.json();
-            const first = Array.isArray(searchData) && searchData.length > 0 ? searchData[0] : null;
+            const searchResults = Array.isArray(searchData) ? searchData : [];
+            const exactMatch = searchResults.find(u => u.user_name && u.user_name.toLowerCase() === normalizedName);
+            const first = exactMatch || searchResults[0] || null;
             if (!first || !first.user_id) {
               return Response.json({
                 type: 4,
@@ -637,7 +639,10 @@ export default {
               throw new Error("search fail");
             }
             const searchData = await searchResp.json();
-            const first = Array.isArray(searchData) && searchData.length > 0 ? searchData[0] : null;
+            const normalizedUsername = String(username).trim().toLowerCase();
+            const searchResults = Array.isArray(searchData) ? searchData : [];
+            const exactMatch = searchResults.find(u => u.user_name && u.user_name.toLowerCase() === normalizedUsername);
+            const first = exactMatch || searchResults[0] || null;
             if (!first || !first.user_id) {
               return Response.json({
                 type: 4,
