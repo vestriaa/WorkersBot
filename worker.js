@@ -1,8 +1,47 @@
-const nacl = require("tweetnacl");
+import nacl from "tweetnacl";
 import { Buffer } from "node:buffer";
+
+async function signedFetch(url, secret, env, options = {}) {
+  const method = options.method || "GET";
+  const timestamp = Date.now();
+  const u = new URL(url);
+  const path = u.pathname + u.search;
+  const payload = `${method.toUpperCase()}\n${path}\n${timestamp}`;
+
+  const tKey = env.TIMESTAMP_KEY;
+  const sKey = env.SIGNATURE_KEY;
+
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+
+  const signatureBuffer = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    encoder.encode(payload)
+  );
+
+  const signature = Array.from(new Uint8Array(signatureBuffer))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  const headers = {
+    ...options.headers,
+    [tKey]: timestamp.toString(),
+    [sKey]: signature
+  };
+
+  return fetch(url, { ...options, headers });
+}
 
 export default {
   async fetch(request, env, ctx) {
+    const grab_secret = env.GRAB_SECRET;
 
     const signature = request.headers.get("x-signature-ed25519");
     const timestamp = request.headers.get("x-signature-timestamp");
@@ -58,7 +97,7 @@ export default {
         const apiUrl = `https://api.slin.dev/grab/v1/details/${levelId}/${levelTimestamp}`;
 
         try {
-          const apiResponse = await fetch(apiUrl);
+          const apiResponse = await signedFetch(apiUrl, grab_secret, env);
           if (!apiResponse.ok) {
             throw new Error("api fail");
           }
@@ -81,17 +120,17 @@ export default {
 
           const embed = inQueue
             ? {
-                title: title,
-                url: url,
-                description: "**is submitted** ",
-                color: 0x57f287
-              }
+              title: title,
+              url: url,
+              description: "**is submitted** ",
+              color: 0x57f287
+            }
             : {
-                title: title,
-                url: url,
-                description: "**isn't submitted** \n-# If you submitted your level, it got denied.",
-                color: 0xed4245
-              };
+              title: title,
+              url: url,
+              description: "**isn't submitted** \n-# If you submitted your level, it got denied.",
+              color: 0xed4245
+            };
 
           return Response.json({
             type: 4,
@@ -145,7 +184,7 @@ export default {
         const leaderboardUrl = `https://api.slin.dev/grab/v1/statistics_top_leaderboard/${levelId}/${levelTimestamp}`;
 
         try {
-          const apiResponse = await fetch(apiUrl);
+          const apiResponse = await signedFetch(apiUrl, grab_secret, env);
           if (!apiResponse.ok) {
             throw new Error("api fail");
           }
@@ -158,7 +197,7 @@ export default {
           let useLeaderboardFormat = false;
 
           try {
-            const lbResponse = await fetch(leaderboardUrl);
+            const lbResponse = await signedFetch(leaderboardUrl, grab_secret, env);
             if (lbResponse.ok) {
               const lbData = await lbResponse.json();
               const entries = Array.isArray(lbData) ? lbData : [];
@@ -298,7 +337,7 @@ export default {
         if (!userId) {
           const searchUrl = `https://api.slin.dev/grab/v1/list?max_format_version=18&type=user_name&search_term=${encodeURIComponent(username)}`;
           try {
-            const searchResp = await fetch(searchUrl);
+            const searchResp = await signedFetch(searchUrl, grab_secret, env);
             if (!searchResp.ok) {
               throw new Error("couldn't search user");
             }
@@ -342,7 +381,7 @@ export default {
         const detailsUrl = `https://api.slin.dev/grab/v1/details/${levelId}/${levelTimestamp}`;
         let title = "untitled level";
         try {
-          const detResp = await fetch(detailsUrl);
+          const detResp = await signedFetch(detailsUrl, grab_secret, env);
           if (detResp.ok) {
             const detData = await detResp.json();
             title = detData.title || title;
@@ -352,7 +391,7 @@ export default {
 
         const bestUrl = `https://api.slin.dev/grab/v1/best_time_replay/${levelId}/${levelTimestamp}?user_id=${encodeURIComponent(userId)}`;
         try {
-          const bestResp = await fetch(bestUrl);
+          const bestResp = await signedFetch(bestUrl, grab_secret, env);
           if (!bestResp.ok) {
             const text = await bestResp.text().catch(() => "");
             if (text && text.toLowerCase().includes("user not found")) {
@@ -468,7 +507,7 @@ export default {
         const detailsUrl = `https://api.slin.dev/grab/v1/details/${levelId}/${levelTimestamp}`;
         let title = "untitled level";
         try {
-          const detResp = await fetch(detailsUrl);
+          const detResp = await signedFetch(detailsUrl, grab_secret, env);
           if (detResp.ok) {
             const detData = await detResp.json();
             title = detData.title || title;
@@ -479,7 +518,7 @@ export default {
         const leaderboardUrl = `https://api.slin.dev/grab/v1/statistics_top_leaderboard/${levelId}/${levelTimestamp}`;
 
         try {
-          const lbRes = await fetch(leaderboardUrl);
+          const lbRes = await signedFetch(leaderboardUrl, grab_secret, env);
           if (!lbRes.ok) {
             throw new Error("leaderboard fail");
           }
@@ -522,15 +561,15 @@ export default {
           const secondsTime = String(date.getUTCSeconds()).padStart(2, "0");
 
           const monthNames = [
-            "January","February","March","April","May","June",
-            "July","August","September","October","November","December"
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"
           ];
           const month = monthNames[date.getUTCMonth()];
 
           const suffix =
             day % 10 === 1 && day !== 11 ? "st" :
-            day % 10 === 2 && day !== 12 ? "nd" :
-            day % 10 === 3 && day !== 13 ? "rd" : "th";
+              day % 10 === 2 && day !== 12 ? "nd" :
+                day % 10 === 3 && day !== 13 ? "rd" : "th";
 
           const unixSeconds = Math.floor(timestampNumber / 1000);
           const recordedOn = `${month} ${day}${suffix} ${year} at <t:${unixSeconds}:T>`;
@@ -593,7 +632,7 @@ export default {
         if (!userId) {
           const searchUrl = `https://api.slin.dev/grab/v1/list?max_format_version=19&type=user_name&search_term=${encodeURIComponent(String(username))}`;
           try {
-            const searchResp = await fetch(searchUrl);
+            const searchResp = await signedFetch(searchUrl, grab_secret, env);
             if (!searchResp.ok) {
               throw new Error("search fail");
             }
@@ -625,7 +664,7 @@ export default {
 
         const infoUrl = `https://api.slin.dev/grab/v1/get_user_info?user_id=${encodeURIComponent(userId)}`;
         try {
-          const infoResp = await fetch(infoUrl);
+          const infoResp = await signedFetch(infoUrl, grab_secret, env);
           if (!infoResp.ok) {
             throw new Error("info fail");
           }
@@ -699,7 +738,7 @@ export default {
         const detailsUrl = `https://api.slin.dev/grab/v1/details/${levelId}/${levelTimestamp}`;
 
         try {
-          const detResp = await fetch(detailsUrl);
+          const detResp = await signedFetch(detailsUrl, grab_secret, env);
           if (!detResp.ok) {
             throw new Error("details fail");
           }
@@ -730,14 +769,14 @@ export default {
             const day = date.getUTCDate();
             const year = date.getUTCFullYear();
             const monthNames = [
-              "January","February","March","April","May","June",
-              "July","August","September","October","November","December"
+              "January", "February", "March", "April", "May", "June",
+              "July", "August", "September", "October", "November", "December"
             ];
             const month = monthNames[date.getUTCMonth()];
             const suffix =
               day % 10 === 1 && day !== 11 ? "st" :
-              day % 10 === 2 && day !== 12 ? "nd" :
-              day % 10 === 3 && day !== 13 ? "rd" : "th";
+                day % 10 === 2 && day !== 12 ? "nd" :
+                  day % 10 === 3 && day !== 13 ? "rd" : "th";
             const formatted = `${month} ${day}${suffix} ${year} at <t:${unixSeconds}:T>`;
             description = `**Verified on:** ${formatted}`;
           } else if (hasOkTimestamp && !hasOkTag) {
@@ -745,14 +784,14 @@ export default {
             const day = date.getUTCDate();
             const year = date.getUTCFullYear();
             const monthNames = [
-              "January","February","March","April","May","June",
-              "July","August","September","October","November","December"
+              "January", "February", "March", "April", "May", "June",
+              "July", "August", "September", "October", "November", "December"
             ];
             const month = monthNames[date.getUTCMonth()];
             const suffix =
               day % 10 === 1 && day !== 11 ? "st" :
-              day % 10 === 2 && day !== 12 ? "nd" :
-              day % 10 === 3 && day !== 13 ? "rd" : "th";
+                day % 10 === 2 && day !== 12 ? "nd" :
+                  day % 10 === 3 && day !== 13 ? "rd" : "th";
             const formatted = `${month} ${day}${suffix} ${year} at <t:${unixSeconds}:T>`;
             description = `**Was Verified:** ${formatted}`;
           } else {
