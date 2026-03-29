@@ -335,7 +335,7 @@ export default {
         let userNameCanonical = cachedUser?.user_name;
 
         if (!userId) {
-          const searchUrl = `https://api.slin.dev/grab/v1/list?max_format_version=18&type=user_name&search_term=${encodeURIComponent(username)}`;
+          const searchUrl = `https://api.slin.dev/grab/v1/list?max_format_version=false&type=user_name&search_term=${encodeURIComponent(username)}`;
           try {
             const searchResp = await signedFetch(searchUrl, grab_secret, env);
             if (!searchResp.ok) {
@@ -632,7 +632,7 @@ export default {
         }
 
         if (!userId) {
-          const searchUrl = `https://api.slin.dev/grab/v1/list?max_format_version=19&type=user_name&search_term=${encodeURIComponent(String(username))}`;
+          const searchUrl = `https://api.slin.dev/grab/v1/list?max_format_version=false&type=user_name&search_term=${encodeURIComponent(String(username))}`;
           try {
             const searchResp = await signedFetch(searchUrl, grab_secret, env);
             if (!searchResp.ok) {
